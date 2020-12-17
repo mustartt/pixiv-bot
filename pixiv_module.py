@@ -11,7 +11,6 @@ from io import BytesIO
 from typing import Callable
 import json
 
-
 AUTH_URL = 'https://oauth.secure.pixiv.net/auth/token'
 BASE_URL = 'https://app-api.pixiv.net'
 FILTER = 'for_ios'
@@ -19,7 +18,7 @@ FILTER = 'for_ios'
 class ExtendedClient(Client):
     @require_auth
     def search_popular_preview(self, word: str,
-                       search_target=SearchTarget.TAGS_EXACT):
+                               search_target=SearchTarget.TAGS_EXACT):
         """
         Search for popular previews at /v1/search/popular-preview/illust.
 
@@ -153,7 +152,35 @@ class ExtendedClient(Client):
 
         return image_arr
             
+    def search_autocomplete(self, word: str, ver='v2'):
+        """
+        Get autocompleted tags for the given search query word. Contains translated
+        tags and English Tags.
 
+        :param str word: The search term
+        :param str ver:  The search query version
+
+        :return: A List containing a dictionary with the translated tags and english tags
+
+        .. code-block:: python
+        [{
+            'name': 'Translated Tag',
+            'translated_name': 'English Tag'
+        }]
+
+        :rtype list
+        """
+        
+        response = self._request_json(
+            method='get',
+            url=f"{BASE_URL}/{ver}/search/autocomplete",
+            params={
+                'word': word
+                }
+            )
+
+        return response['tags']
+        
 
 
 
