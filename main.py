@@ -2,6 +2,8 @@ import discord
 import credentials
 
 from pixiv_module import PixivModule
+from pixivapi.enums import SearchTarget, ContentType, Sort
+
 
 cred = credentials.Credentials('settings.cfg')
 
@@ -14,8 +16,8 @@ pixiv_refresh   = cred.get_refresh_token()
 
 # create PixivModule
 pixiv = PixivModule(pixiv_username, pixiv_password,
-                    cred.write_refresh_token, refresh_token=pixiv_refresh)
-
+                    cred.write_refresh_token,
+                    refresh_token=pixiv_refresh)
 
 
 

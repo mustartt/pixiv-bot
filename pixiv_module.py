@@ -2,8 +2,11 @@ from pixivapi import Client
 
 from pixivapi.errors import LoginError
 from pixivapi.models import Illustration
-from pixivapi.enums  import ContentType, RankingMode, SearchTarget, Sort, Visibility
+from pixivapi.enums  import ContentType, RankingMode, SearchTarget, Size, Sort, Visibility
 from pixivapi.common import HEADERS, format_bool, parse_qs, require_auth
+
+from PIL import Image
+from io import BytesIO
 
 from typing import Callable
 import json
@@ -16,7 +19,7 @@ FILTER = 'for_ios'
 class ExtendedClient(Client):
     @require_auth
     def search_popular_preview(self, word: str,
-                       search_target=SearchTarget.TAGS_PARTIAL):
+                       search_target=SearchTarget.TAGS_EXACT):
         """
         Search for popular previews at /v1/search/popular-preview/illust.
 
@@ -38,7 +41,7 @@ class ExtendedClient(Client):
             params={
                 'word': word,
                 'search_target': search_target.value,
-                'sort': 'popular_desc'
+                'sort': 'popular_desc',
                 'filter': FILTER
             })
 
@@ -97,7 +100,62 @@ class ExtendedClient(Client):
             'next': parse_qs(response['next_url'], param='offset'),
             'search_span_limit': response['search_span_limit'],
         }
+
+    def download_image(self, url: str, referer='https://pixiv.net') -> Image:
+        """
+        This function returns the an image object of file at url.
+        the client's access token if available.
         
+        :param str url:     The URL to the file.
+        :param str referer: The Referer header.
+
+        :rtype PIL.Image    Pillow Image Object
+        
+        :raises FileNotFoundError: If the destination's directory does
+            not exist.
+        :raises PermissionError: If the destination cannot be written to.
+        """
+        
+        response = self.session.get(
+            url=url, headers={'Referer': referer}, stream=True
+        )
+
+        return Image.open(BytesIO(response.content))
+
+    def get_illust_images(self, illust: Illustration, size=Size.LARGE):
+        """
+        Load the illustration to an array of Images. If illustration has
+        only a single page, the array of Images with be length of one
+        
+        :param pixivapi.models.Illustration illust: The illustration will be downloaded
+            to this directory.
+        :param Size size: The size of the image to download.
+
+        :rtype List[Pillow.Image]: Array of Images
+        
+        :raises requests.RequestException: If the request fails.
+        """
+
+        referer = (
+            'https://www.pixiv.net/member_illust.php?mode=medium'
+            f'&illust_id={illust.id}'
+        )
+
+        image_arr = []
+
+        if illust.meta_pages:
+            for page in illust.meta_pages:
+                img = self.download_image(page[size], referer=referer)
+                image_arr.append(img)
+        else:
+            img = self.download_image(page[size], referer=referer)
+            image_arr.append(img)
+
+        return image_arr
+            
+
+
+
 
 class PixivModule:
     def __init__(self, username: str, password: str,
@@ -127,6 +185,48 @@ class PixivModule:
     def get_client(self) -> Client:
         """Returns the pixiv-api client"""
         return self.client
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
 
     
