@@ -9,8 +9,6 @@ from typing import Callable
 import json
 
 
-token = "7h0khuTIFNzRlxJxsRWjwOoPIe2sxi9mvEL6Q02JX3I"
-
 AUTH_URL = 'https://oauth.secure.pixiv.net/auth/token'
 BASE_URL = 'https://app-api.pixiv.net'
 FILTER = 'for_ios'
