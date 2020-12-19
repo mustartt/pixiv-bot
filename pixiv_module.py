@@ -100,26 +100,73 @@ class ExtendedClient(Client):
             'search_span_limit': response['search_span_limit'],
         }
 
-    def download_image(self, url: str, referer='https://pixiv.net') -> Image:
+    def download_byte_stream(self, url: str, referer='https://pixiv.net') -> BytesIO:
         """
-        This function returns the an image object of file at url.
-        the client's access token if available.
+        This function returns the the BytesIO object of file at url.
+        uses the client's access token if available.
         
         :param str url:     The URL to the file.
         :param str referer: The Referer header.
 
-        :rtype PIL.Image    Pillow Image Object
-        
-        :raises FileNotFoundError: If the destination's directory does
-            not exist.
-        :raises PermissionError: If the destination cannot be written to.
+        :return io.BytesIO 
+
+        :rtype io.BytesIO   IO Buffered Bytes Stream
         """
-        
+
         response = self.session.get(
             url=url, headers={'Referer': referer}, stream=True
         )
 
-        return Image.open(BytesIO(response.content))
+        return BytesIO(response.content)
+
+    def download_image(self, url: str, referer='https://pixiv.net') -> Image:
+        """
+        This function returns the an image object of file at url.
+        ueses the client's access token if available.
+        
+        :param str url:     The URL to the file.
+        :param str referer: The Referer header.
+
+        :return Image
+
+        :rtype PIL.Image    Pillow Image Object
+        """
+
+        return Image.open(self.download_byte_stream(url, referer))
+
+
+    def get_illust_byte_streams(self, illust: Illustration, size=Size.LARGE):
+        """
+        Load the illustration to an array of BytesIO. If illustration has
+        only a single page, the array of BytesIO with be length of one
+        
+        :param pixivapi.models.Illustration illust: The illustration will be downloaded
+            to this directory.
+        :param Size size: The size of the image to download.
+
+        :rtype List[io.BytesIO]: Array of Images
+        
+        :raises requests.RequestException: If the request fails.
+        """
+
+        referer = (
+            'https://www.pixiv.net/member_illust.php?mode=medium'
+            f'&illust_id={illust.id}'
+        )
+
+        image_arr = []
+
+        if illust.meta_pages:
+            for page in illust.meta_pages:
+                img = self.download_byte_stream(page[size], referer=referer)
+                image_arr.append(img)
+        else:
+            img = self.download_byte_stream(illust.image_urls[size], referer=referer)
+            image_arr.append(img)
+
+        return image_arr
+
+    
 
     def get_illust_images(self, illust: Illustration, size=Size.LARGE):
         """
@@ -147,7 +194,7 @@ class ExtendedClient(Client):
                 img = self.download_image(page[size], referer=referer)
                 image_arr.append(img)
         else:
-            img = self.download_image(page[size], referer=referer)
+            img = self.download_image(illust.image_urls[size], referer=referer)
             image_arr.append(img)
 
         return image_arr
