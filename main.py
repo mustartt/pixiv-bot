@@ -53,6 +53,8 @@ client.remove_command('help')
 @client.event
 async def on_ready():
     print(f"{client.user.name} has connected to discord.")
+    activity = discord.Activity(type=discord.ActivityType.watching, name=f'prefix {cmd_pref}')
+    await client.change_presence(activity=activity)
 
 
 
