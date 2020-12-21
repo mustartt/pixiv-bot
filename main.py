@@ -56,11 +56,28 @@ async def on_ready():
     activity = discord.Activity(type=discord.ActivityType.watching, name=f'prefix {cmd_pref}')
     await client.change_presence(activity=activity)
 
+    # create check authentication loop task
+    client.loop.create_task(check_auth())
+
 
 
 @client.command(name='test')
 async def test(ctx, *, query):
     await ctx.send('test')
+
+
+INTERVAL = 15 * 60
+
+async def check_auth():
+    while True:
+        await asyncio.sleep(INTERVAL)
+        try:
+            pixiv.search_popular('rem')
+        except Exception as err:
+            print('Exception Raised in check_auth()')
+            print(err)
+            # attempt to reauthenticate
+            pixiv.authenticate(pixiv_refresh)
 
 
 @client.command(name='help')
