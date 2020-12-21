@@ -30,14 +30,14 @@ pixiv_refresh   = cred.get_refresh_token()
 LEFT_ARROW = '\u2B05'
 RIGHT_ARROW = '\u27A1'
 HEART = '\u2764'
-DOWNLOAD = '\u1F4BE'
+DOWNLOAD = '\u2B07'
 
 
 async def add_reactions(msg):
     await msg.add_reaction(LEFT_ARROW)
     await msg.add_reaction(RIGHT_ARROW)
     await msg.add_reaction(HEART)
-    #await msg.add_reaction(DOWNLOAD)
+    await msg.add_reaction(DOWNLOAD)
 
 
 
@@ -46,8 +46,8 @@ pixiv = PixivModule(pixiv_username, pixiv_password,
                     cred.write_refresh_token,
                     refresh_token=pixiv_refresh).get_client()
 
-
 client = commands.Bot(command_prefix=cmd_pref)
+client.remove_command('help')
 
 
 @client.event
@@ -59,6 +59,26 @@ async def on_ready():
 @client.command(name='test')
 async def test(ctx, *, query):
     await ctx.send('test')
+
+
+@client.command(name='help')
+async def help(ctx):
+    embed=discord.Embed(title="pixiv-bot Help Page", color=0xff6b6b)
+    embed.add_field(name="Commands",
+                    value="""`?search tag1, tag2, ...` Searches pixiv.net
+                    for the top 30 most popular illustrations associated
+                    with the tags. Enter tags seperated by commas.""",
+                    inline=False)
+    
+    embed.add_field(name="Reaction System",
+                    value=f"""
+                            - React to {LEFT_ARROW} to go back to the previous panel/image.
+                            - React to {RIGHT_ARROW} to go to the next panel/image. 
+                            - React to {HEART} to find 3 related images. 
+                            - React to {DOWNLOAD} to get the full quality images.
+                          """,
+                    inline=False)
+    await ctx.send(embed=embed)
 
 
 # max download size
@@ -95,8 +115,9 @@ async def download(ctx, illust_id: int):
         file_streams = pixiv.get_illust_byte_streams(illust, size=Size.ORIGINAL)
 
         # check for oversized files
-        num_of_large = len([buffer.getbuffer().nbytes > FILE_SIZE_MAX
-                            for buffer in file_streams])
+        num_of_large = len([buffer
+                            for buffer in file_streams
+                            if buffer.getbuffer().nbytes > FILE_SIZE_MAX])
 
         if num_of_large:
             await ctx.send(f'There are {num_of_large} file(s) that are over 8MBs. Performing compressions.')
@@ -249,9 +270,14 @@ async def search(ctx, *, query: str):
 
 
             if reaction.emoji == HEART:
-                #trigger typing
+                # trigger typing
                 await ctx.trigger_typing()
                 await ctx.invoke(client.get_command('search_related'),
+                                 illust_id=illusts[curr_page].id)
+
+            if reaction.emoji == DOWNLOAD:
+                # invoke download command
+                await ctx.invoke(client.get_command('download'),
                                  illust_id=illusts[curr_page].id)
             
         except asyncio.TimeoutError:
@@ -366,7 +392,7 @@ def create_embed_file(title: str,
     """
     caption = re.sub('<[^<]+?>', '', description)
     caption = re.sub('http\S+', '', caption)
-    embed = discord.Embed(title=title, description=caption)
+    embed = discord.Embed(title=title, description=caption, color=0x00cec9)
     embed.set_image(url=f"attachment://{image_name}.jpg")
 
     # reset image byte stream back to 0
@@ -395,8 +421,6 @@ async def create_gallery(ctx, illust_id:int):
 
     pages_total = len(image_binaries)
     curr_page = 0 # index starts at 0 -> display + 1
-
-
 
 
     # multi page illustration
@@ -460,6 +484,11 @@ async def create_gallery(ctx, illust_id:int):
 
             if reaction.emoji == HEART:
                 await ctx.invoke(client.get_command('search_related'),
+                                 illust_id=illust.id)
+
+            if reaction.emoji == DOWNLOAD:
+                # invoke download command
+                await ctx.invoke(client.get_command('download'),
                                  illust_id=illust.id)
             
         except asyncio.TimeoutError:
