@@ -7,12 +7,14 @@ from pixivapi.enums import SearchTarget, Size, ContentType, Sort
 from pixivapi.models import Illustration
 
 from typing import List, Tuple, Dict
+from functools import reduce
 
 import io
 import asyncio
 import random
 import re
 from Levenshtein import ratio
+from PIL import Image
 
 
 cred = credentials.Credentials('settings.cfg')
@@ -22,6 +24,21 @@ cmd_pref        = cred.get_item('DEFAULT', 'command_prefix')
 pixiv_username  = cred.get_item('DEFAULT', 'pixiv_username')
 pixiv_password  = cred.get_item('DEFAULT', 'pixiv_password')
 pixiv_refresh   = cred.get_refresh_token()
+
+
+
+LEFT_ARROW = '\u2B05'
+RIGHT_ARROW = '\u27A1'
+HEART = '\u2764'
+DOWNLOAD = '\u1F4BE'
+
+
+async def add_reactions(msg):
+    await msg.add_reaction(LEFT_ARROW)
+    await msg.add_reaction(RIGHT_ARROW)
+    await msg.add_reaction(HEART)
+    #await msg.add_reaction(DOWNLOAD)
+
 
 
 # create PixivModule
@@ -43,9 +60,64 @@ async def on_ready():
 async def test(ctx, *, query):
     await ctx.send('test')
 
+
+# max download size
+FILE_SIZE_MAX = 7900000
+
+IMAGE_QUALITY = 85
+
+def process_image(image_buffer: io.BytesIO) -> io.BytesIO:
+
+    if image_buffer.getbuffer().nbytes < FILE_SIZE_MAX:
+        return image_buffer
+
+    image_buffer.seek(0)
+    image = Image.open(image_buffer)
+    
+    new_buffer = io.BytesIO()
+    image.save(new_buffer, format='JPEG', quality=IMAGE_QUALITY)
+
+    new_buffer.seek(0)
+    return new_buffer
+
     
 
+
+@client.command(name='download')
+async def download(ctx, illust_id: int):
+
+    # trigger typing
+    await ctx.trigger_typing()
+    
+    try:
+        illust = pixiv.fetch_illustration(illust_id)
+
+        file_streams = pixiv.get_illust_byte_streams(illust, size=Size.ORIGINAL)
+
+        # check for oversized files
+        num_of_large = len([buffer.getbuffer().nbytes > FILE_SIZE_MAX
+                            for buffer in file_streams])
+
+        if num_of_large:
+            await ctx.send(f'There are {num_of_large} file(s) that are over 8MBs. Performing compressions.')
+
+        # DEBUG:
+        image_binaries = [process_image(x) for x in file_streams]
+
+        # send images as attachments
+        await ctx.send(files=[discord.File(fp=stream,
+                                           filename=f'{illust.id}_{index}.jpg')
+                              for index, stream in enumerate(image_binaries)])
+
         
+    except Exception as err:
+        await ctx.send('Failed to download.')
+        print(err)
+
+
+    
+
+THRESHOLD = 0.5
 
 @client.command(name='search')
 async def search(ctx, *, query: str):
@@ -53,8 +125,8 @@ async def search(ctx, *, query: str):
     #trigger typing
     await ctx.trigger_typing()
     
-    def find_best_tag(query: str, query_item: Dict[str, str]) -> str:
-        def calc_max_ratio(query: str, query_item: Dict[str, str]) -> Tuple[float, float]:
+    def find_best_tag(query: str, query_item: Dict[str, str]) -> Tuple[str, float]:
+        def calc_max_ratio(query: str, query_item: Dict[str, str]) -> float:
             eng_tag = query_item['translated_name']
             jap_tag = query_item['name']
 
@@ -64,28 +136,42 @@ async def search(ctx, *, query: str):
             return max(eng_ratio, jap_ratio)
 
         best_item = max(tag_suggestions, key=lambda x: calc_max_ratio(query, x))
-        return best_item['name']
+        return (best_item['name'], calc_max_ratio(query, best_item))
     
     
     tag_list = query.split(',')
     tag_result = []
 
+    #DEBUG:
+    #await ctx.send(f'```{tag_list}```')
+    
+
     for tag in tag_list:
         tag_suggestions = pixiv.search_autocomplete(tag.strip())
 
         # create query for only valid tags
-        if tag_suggestions:      
-            best = find_best_tag(tag, tag_suggestions)
-            tag_result.append(best)
+        if tag_suggestions:
+            best, confidence = find_best_tag(tag, tag_suggestions)
 
+            if confidence < THRESHOLD:
+                tag_result.append(tag)
+            else:
+                tag_result.append(best)
+        else:
+            tag_result.append(tag.strip())
+
+    # generate api query tags
     compiled_query = ' '.join(tag_result)
     query_display = ' '.join(map(lambda x: f'`#{x}`', tag_result))
 
-    #DEBUG: await ctx.send(f'```{compiled_query}```')
+    #DEBUG:
+    #await ctx.send(f'```{compiled_query}```')
 
     # get illustrations
     # TODO: Change to pixiv.search_popular() 
-    res = pixiv.search_popular_preview(compiled_query)
+    #res = pixiv.search_popular_preview(compiled_query, search_target=SearchTarget.TAGS_PARTIAL)
+    res = pixiv.search_popular_preview(compiled_query) # use exact tag matching
+
     illusts = res['illustrations'] # array of Illustrations
 
     curr_page = 0
@@ -103,9 +189,7 @@ async def search(ctx, *, query: str):
     message = await ctx.send(embed=embed, file=file)
 
     # add reactions
-    await message.add_reaction(LEFT_ARROW)
-    await message.add_reaction(RIGHT_ARROW)
-    await message.add_reaction(HEART)
+    await add_reactions(message)
 
 
     # implements the reaction to controls
@@ -138,9 +222,7 @@ async def search(ctx, *, query: str):
                 message = await ctx.send(embed=embed, file=file)
 
                 # add reactions
-                await message.add_reaction(LEFT_ARROW)
-                await message.add_reaction(RIGHT_ARROW)
-                await message.add_reaction(HEART)
+                await add_reactions(message)
                 
                 
             if reaction.emoji == RIGHT_ARROW and pages_total > 1:
@@ -163,9 +245,7 @@ async def search(ctx, *, query: str):
                 message = await ctx.send(embed=embed, file=file)
 
                 # add reactions
-                await message.add_reaction(LEFT_ARROW)
-                await message.add_reaction(RIGHT_ARROW)
-                await message.add_reaction(HEART)
+                await add_reactions(message)
 
 
             if reaction.emoji == HEART:
@@ -181,19 +261,6 @@ async def search(ctx, *, query: str):
             print(err)
             break
             
-    
-
-    
-
-    
-    
-    
-        
-        
-    
-        
-
-
     
 
 @client.command(name='get_tag_popular_result')
@@ -288,9 +355,6 @@ async def search_tag_error(ctx, error):
 
 TIMEOUT = 30.0
 
-LEFT_ARROW = '\u2B05'
-RIGHT_ARROW = '\u27A1'
-HEART = "\u2764"
 
 def create_embed_file(title: str,
                       description: str,
@@ -344,10 +408,8 @@ async def create_gallery(ctx, illust_id:int):
     message = await ctx.send(file=file, embed=embed)
 
     # add reaction emojis
-    await message.add_reaction(LEFT_ARROW)
-    await message.add_reaction(RIGHT_ARROW)
-    await message.add_reaction(HEART)
-
+    await add_reactions(message)
+    
     # implements the reaction to controls
 
     def check(reaction, user):
@@ -375,9 +437,7 @@ async def create_gallery(ctx, illust_id:int):
                 message = await ctx.send(file=file, embed=embed)
 
                 # add reaction emojis
-                await message.add_reaction(LEFT_ARROW)
-                await message.add_reaction(RIGHT_ARROW)
-                await message.add_reaction(HEART)
+                await add_reactions(message)
 
 
             if reaction.emoji == RIGHT_ARROW and pages_total > 1:
@@ -396,9 +456,7 @@ async def create_gallery(ctx, illust_id:int):
                 message = await ctx.send(file=file, embed=embed)
 
                 # add reaction emojis
-                await message.add_reaction(LEFT_ARROW)
-                await message.add_reaction(RIGHT_ARROW)
-                await message.add_reaction(HEART)
+                await add_reactions(message)
 
             if reaction.emoji == HEART:
                 await ctx.invoke(client.get_command('search_related'),
